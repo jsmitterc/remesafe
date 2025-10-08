@@ -177,8 +177,8 @@ export default function AccountsPage() {
 
   // Get unique categories and currencies for filter dropdowns (only from active accounts)
   const activeAccounts = accounts.filter(account => account.active === 1);
-  const categories = [...new Set(activeAccounts.map(account => account.category).filter(Boolean))];
-  const currencies = [...new Set(activeAccounts.map(account => account.currency).filter(Boolean))].sort();
+  const categories = [...new Set(activeAccounts.map(account => account.category).filter((cat): cat is string => Boolean(cat)))];
+  const currencies = [...new Set(activeAccounts.map(account => account.currency).filter((cur): cur is string => Boolean(cur)))].sort();
 
   const formatCurrency = (amount: number, currency: string) => {
     // List of valid ISO currency codes
@@ -318,7 +318,7 @@ export default function AccountsPage() {
               <div className="text-center py-12">
                 <div className="text-gray-400 text-6xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No accounts found</h3>
-                <p className="text-gray-500">You don't have any accounts associated with your profile yet.</p>
+                <p className="text-gray-500">You don&apos;t have any accounts associated with your profile yet.</p>
               </div>
             )}
 

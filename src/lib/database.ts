@@ -15,9 +15,9 @@ export interface LoginUser {
   id?: number;
   email: string;
   name?: string;
-  created_at?: string;
-  updated_at?: string;
-  [key: string]: any;
+  created_at?: string | Date;
+  updated_at?: string | Date;
+  [key: string]: unknown;
 }
 
 export interface Account {
@@ -248,7 +248,7 @@ export async function updateAccount(
 
     // Build update query dynamically
     const updateFields: string[] = [];
-    const updateValues: any[] = [];
+    const updateValues: (string | number)[] = [];
 
     if (updates.account_name !== undefined) {
       updateFields.push('alias = ?');
@@ -459,7 +459,7 @@ export async function createReconciliationTransaction(
     reconciliationDate: string;
     description?: string;
   }
-): Promise<{ success: boolean; transaction?: any; error?: string }> {
+): Promise<{ success: boolean; transaction?: { id: number; previousBalance: number; newBalance: number; difference: number }; error?: string }> {
   try {
     // Get account details
     const [accountRows] = await pool.execute(
@@ -566,7 +566,7 @@ export async function getAccountBalance(accountId: number): Promise<{ balance: n
 
 export async function importBankStatement(
   statement: BankStatement
-): Promise<{ success: boolean; transactions?: any[]; error?: string }> {
+): Promise<{ success: boolean; transactions?: Array<{ id: number; [key: string]: unknown }>; error?: string }> {
   try {
     // Get account details
     const [accountRows] = await pool.execute(
@@ -770,8 +770,7 @@ export async function getTransactionSummaryByAccount(
   transferTransactions: number;
 }> {
   try {
-    let dateFilter = '';
-    let queryParams: any[] = [];
+    const dateFilter = '';
 
     const query = `
       SELECT
@@ -796,7 +795,7 @@ export async function getTransactionSummaryByAccount(
     `;
 
     // Build parameters array in the correct order
-    queryParams = [
+    const queryParams = [
       accountCode,  // for transaction_type CASE
       accountCode,  // for other_account_type CASE
       accountCode,  // for amount CASE
@@ -810,7 +809,7 @@ export async function getTransactionSummaryByAccount(
 
     console.log('Query params:', queryParams);
     const [rows] = await pool.execute(query, queryParams);
-    const transactions = rows as any[];
+    const transactions = rows as Array<Transaction & { transaction_type: string; other_account_type: string; amount: string }>;
 
     let totalIncome = 0;
     let totalExpenses = 0;
@@ -818,7 +817,7 @@ export async function getTransactionSummaryByAccount(
     let expenseTransactions = 0;
     let transferTransactions = 0;
 
-    transactions.forEach((transaction: any) => {
+    transactions.forEach((transaction) => {
       const classification = classifyTransaction(
         transaction.transaction_type,
         transaction.other_account_type
@@ -897,7 +896,7 @@ export async function getExpensesByCategory(
     `;
 
     // Build parameters array in the correct order
-    let queryParams = [
+    const queryParams = [
       accountCode,  // for other_account_alias CASE
       accountCode,  // for other_account_code CASE
       accountCode,  // for other_account_type CASE
@@ -913,18 +912,28 @@ export async function getExpensesByCategory(
 
     console.log('Expenses query params:', queryParams);
     const [rows] = await pool.execute(query, queryParams);
-    const results = rows as any[];
+
+    interface ExpenseRow {
+      other_account_alias: string;
+      other_account_code: string;
+      other_account_type: string;
+      transaction_type: string;
+      total_amount: string;
+      transaction_count: string;
+    }
+
+    const results = rows as ExpenseRow[];
 
     // Filter only expense transactions
     return results
-      .filter((row: any) => {
+      .filter((row) => {
         const classification = classifyTransaction(
-          row.transaction_type,
-          row.other_account_type
+          row.transaction_type as 'debit' | 'credit',
+          row.other_account_type as 'asset' | 'liability' | 'equity' | 'income' | 'expense' | null
         );
         return classification === 'expense';
       })
-      .map((row: any) => ({
+      .map((row) => ({
         otherAccountAlias: row.other_account_alias || 'Unknown',
         otherAccountCode: row.other_account_code,
         totalAmount: parseFloat(row.total_amount) || 0,
@@ -1040,7 +1049,6 @@ export async function assignAccountToTransaction(
     const transaction = transactions[0];
 
     // Determine which field to update
-    let updateField: string;
     let updateQuery: string;
 
     if (isDebitAccount) {
@@ -1048,14 +1056,12 @@ export async function assignAccountToTransaction(
       if (transaction.debitacc !== '0') {
         return { success: false, error: 'Debit account is already assigned' };
       }
-      updateField = 'debitacc';
       updateQuery = 'UPDATE rv_transaction SET debitacc = ? WHERE id = ?';
     } else {
       // Assign to credit account (if creditacc is '0')
       if (transaction.creditacc !== '0') {
         return { success: false, error: 'Credit account is already assigned' };
       }
-      updateField = 'creditacc';
       updateQuery = 'UPDATE rv_transaction SET creditacc = ? WHERE id = ?';
     }
 
@@ -1075,7 +1081,7 @@ export async function getAccountsForAssignment(
 ): Promise<Account[]> {
   try {
     let query = 'SELECT * FROM rv_cuentas WHERE active = 1';
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (accountType) {
       query += ' AND account_type = ?';
@@ -1110,7 +1116,15 @@ export async function getIncompleteTransactionCount(accountCode: string): Promis
   }
 }
 
-export async function getBalanceSheetData(userId: number, dateFilter: string = '', params: any[] = []): Promise<any[]> {
+export async function getBalanceSheetData(userId: number, dateFilter: string = '', params: (string | number)[] = []): Promise<Array<{
+  id: number;
+  code: string;
+  alias: string;
+  category: string;
+  currency: string;
+  total_balance: number;
+  account_type: string;
+}>> {
   try {
     const query = `
       SELECT
@@ -1137,7 +1151,15 @@ export async function getBalanceSheetData(userId: number, dateFilter: string = '
     `;
 
     const [rows] = await pool.execute(query, params);
-    return rows as any[];
+    return rows as Array<{
+      id: number;
+      code: string;
+      alias: string;
+      category: string;
+      currency: string;
+      total_balance: number;
+      account_type: string;
+    }>;
   } catch (error) {
     console.error('Database error:', error);
     throw new Error('Failed to fetch balance sheet data');
@@ -1163,7 +1185,7 @@ export async function bulkUpdateAccountsCategory(
     const [result] = await pool.execute(query, params);
 
     // Get the number of affected rows
-    const affectedRows = (result as any).affectedRows || 0;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows || 0;
 
     return { updatedCount: affectedRows };
   } catch (error) {
@@ -1191,7 +1213,7 @@ export async function bulkUpdateTransactionsClassification(
     `;
 
     const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, userId]);
-    const verifyCount = (verifyResult as any)[0].count;
+    const verifyCount = (verifyResult as Array<{ count: number }>)[0].count;
 
     if (verifyCount === 0) {
       throw new Error('No transactions found or access denied');
@@ -1213,7 +1235,7 @@ export async function bulkUpdateTransactionsClassification(
     const [result] = await pool.execute(updateQuery, params);
 
     // Get the number of affected rows
-    const affectedRows = (result as any).affectedRows || 0;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows || 0;
 
     return { updatedCount: affectedRows };
   } catch (error) {
@@ -1242,7 +1264,7 @@ export async function bulkAssignAccountToTransactions(
     `;
 
     const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, userId, assignedAccountCode, userId]);
-    const { transaction_count, account_count } = (verifyResult as any)[0];
+    const { transaction_count, account_count } = (verifyResult as Array<{ transaction_count: number; account_count: number }>)[0];
 
     if (transaction_count === 0) {
       throw new Error('No transactions found or access denied');
@@ -1269,7 +1291,7 @@ export async function bulkAssignAccountToTransactions(
     const [result] = await pool.execute(updateQuery, params);
 
     // Get the number of affected rows
-    const affectedRows = (result as any).affectedRows || 0;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows || 0;
 
     return { updatedCount: affectedRows };
   } catch (error) {
@@ -1301,7 +1323,7 @@ export async function bulkDeleteTransactions(
     const [result] = await pool.execute(deleteQuery, params);
 
     // Get the number of affected rows
-    const affectedRows = (result as any).affectedRows || 0;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows || 0;
 
     return { deletedCount: affectedRows };
   } catch (error) {
@@ -1338,8 +1360,8 @@ export async function getProfitLossData(
 ): Promise<PLData> {
   try {
     // Build dynamic WHERE conditions and parameters
-    let whereConditions = ['a.user = ?', 'a.active = 1', 'a.account_type IN (\'income\', \'expense\')'];
-    let queryParams = [startDate, endDate];
+    const whereConditions = ['a.user = ?', 'a.active = 1', 'a.account_type IN (\'income\', \'expense\')'];
+    const queryParams: (string | number)[] = [startDate, endDate];
 
     // Add entity filter if specified
     let entityJoin = '';
@@ -1417,6 +1439,7 @@ export async function getProfitLossData(
 }
 
 export interface Entity {
+  [key: string]: unknown;
   id: number;
   code: string;
   sub_code: string | null;
@@ -1524,7 +1547,7 @@ export async function createEntity(entityData: {
       code, sub_code, name, companyEmail, email, whatsapp, timezone, vat, organization_id, userId
     ]);
 
-    const insertId = (result as any).insertId;
+    const insertId = (result as { insertId: number }).insertId;
 
     // Return the created entity
     const entity = await getEntityById(insertId, userId);

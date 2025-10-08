@@ -26,8 +26,8 @@ export default function LoginPage() {
         await login(email, password);
       }
       router.push('/home');
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setIsLoading(false);
     }

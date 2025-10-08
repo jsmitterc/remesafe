@@ -40,7 +40,11 @@ export default function StatementImportModal({ isOpen, onClose, account, onImpor
   const [transactions, setTransactions] = useState<StatementTransaction[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState<any>(null);
+  const [success, setSuccess] = useState<{
+    message: string;
+    importedCount: number;
+    transactions?: unknown[];
+  } | null>(null);
 
   // CSV related state
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -129,7 +133,7 @@ export default function StatementImportModal({ isOpen, onClose, account, onImpor
     setTransactions(transactions.filter(txn => txn.id !== id));
   };
 
-  const updateTransaction = (id: string, field: keyof StatementTransaction, value: any) => {
+  const updateTransaction = (id: string, field: keyof StatementTransaction, value: string | number) => {
     setTransactions(transactions.map(txn =>
       txn.id === id ? { ...txn, [field]: value } : txn
     ));

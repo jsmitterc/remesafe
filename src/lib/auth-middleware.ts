@@ -51,12 +51,16 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
 
     // Get user data from database
     const user = await getUserByEmail(email);
-    if (!user) {
+    if (!user || !user.id) {
       return null;
     }
 
     return {
-      ...user,
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      created_at: user.created_at instanceof Date ? user.created_at.toISOString() : user.created_at,
+      updated_at: user.updated_at instanceof Date ? user.updated_at.toISOString() : user.updated_at,
       firebaseUid: decodedToken.uid
     };
   } catch (error) {
@@ -106,7 +110,7 @@ export async function withAuth(
 export function createAuthHandler(
   handler: (req: AuthenticatedRequest) => Promise<NextResponse>
 ) {
-  return async (request: NextRequest, context?: any) => {
+  return async (request: NextRequest, _context?: unknown) => {
     return withAuth(request, handler);
   };
 }

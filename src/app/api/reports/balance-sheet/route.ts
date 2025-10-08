@@ -12,7 +12,7 @@ async function getHandler(request: AuthenticatedRequest): Promise<NextResponse> 
     const endDate = searchParams.get('endDate');
 
     let dateFilter = '';
-    const params: any[] = [user.id];
+    const params: (string | number)[] = [user.id];
 
     if (timeFrame && timeFrame !== 'custom') {
       // Calculate hours for predefined time frames

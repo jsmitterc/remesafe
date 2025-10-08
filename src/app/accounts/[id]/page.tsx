@@ -18,6 +18,7 @@ interface AccountDetails {
   account_status: string;
   created_at: string;
   updated_at: string;
+  category?: string;
 }
 
 interface Transaction {
@@ -660,7 +661,7 @@ export default function AccountDetailPage() {
 
     // Get unique account types for filter
     const accountTypes = Array.isArray(activeAccounts) ?
-      [...new Set(activeAccounts.map(account => account.category).filter(Boolean))].sort() : [];
+      [...new Set(activeAccounts.map(account => account.category).filter((cat): cat is string => Boolean(cat)))].sort() : [];
 
     const generateAccountCode = (category: string) => {
       if (!category) return '';
@@ -1104,7 +1105,7 @@ export default function AccountDetailPage() {
             {isEditingAccount ? (
               <select
                 value={editedAccount.account_type || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, account_type: e.target.value as any })}
+                onChange={(e) => setEditedAccount({ ...editedAccount, account_type: e.target.value as 'asset' | 'liability' | 'equity' | 'income' | 'expense' })}
                 className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">-</option>
@@ -1463,8 +1464,24 @@ export default function AccountDetailPage() {
           balance: account.current_balance,
           currency: account.currency_code,
           account_type: account.account_type as 'asset' | 'liability' | 'equity' | 'income' | 'expense',
-          category: account.category,
-        } as any : null}
+          category: account.category || null,
+          user: 0,
+          client: null,
+          active: 1,
+          company: null,
+          class1: null,
+          class2: null,
+          numero: account.account_code,
+          bankID: null,
+          user2: null,
+          cartola: null,
+          account: null,
+          viewBalance: false,
+          debitAccount: false,
+          creditAccount: false,
+          date_created: account.created_at,
+          date_updated: account.updated_at
+        } : null}
         onImportComplete={() => {
           setIsImportModalOpen(false);
           fetchAccountDetails();

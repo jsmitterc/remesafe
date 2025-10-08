@@ -62,10 +62,11 @@ export async function POST(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { accountId: string } }
+  { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
-    const accountId = parseInt(params.accountId);
+    const { accountId: accountIdParam } = await params;
+    const accountId = parseInt(accountIdParam);
 
     if (!accountId || isNaN(accountId)) {
       return NextResponse.json({ error: 'Valid account ID is required' }, { status: 400 });

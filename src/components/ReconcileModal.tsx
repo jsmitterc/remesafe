@@ -18,7 +18,14 @@ export default function ReconcileModal({ isOpen, onClose, account, onReconciliat
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState<any>(null);
+  const [success, setSuccess] = useState<{
+    message: string;
+    transaction?: {
+      previousBalance: number;
+      newBalance: number;
+      difference: number;
+    }
+  } | null>(null);
 
   // Initialize date to today
   useEffect(() => {
@@ -290,17 +297,19 @@ export default function ReconcileModal({ isOpen, onClose, account, onReconciliat
                       <h3 className="text-lg font-medium text-gray-900 mb-2">
                         Account Reconciled Successfully!
                       </h3>
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                        <div className="text-sm space-y-1">
-                          <p><span className="font-medium">Previous Balance:</span> {formatCurrency(success.transaction.previousBalance, account.currency)}</p>
-                          <p><span className="font-medium">New Balance:</span> {formatCurrency(success.transaction.newBalance, account.currency)}</p>
-                          <p><span className="font-medium">Adjustment:</span>
-                            <span className={success.transaction.difference > 0 ? 'text-green-600' : 'text-red-600'}>
-                              {success.transaction.difference > 0 ? '+' : ''}{formatCurrency(success.transaction.difference, account.currency)}
-                            </span>
-                          </p>
+                      {success.transaction && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                          <div className="text-sm space-y-1">
+                            <p><span className="font-medium">Previous Balance:</span> {formatCurrency(success.transaction.previousBalance, account.currency)}</p>
+                            <p><span className="font-medium">New Balance:</span> {formatCurrency(success.transaction.newBalance, account.currency)}</p>
+                            <p><span className="font-medium">Adjustment:</span>
+                              <span className={success.transaction.difference > 0 ? 'text-green-600' : 'text-red-600'}>
+                                {success.transaction.difference > 0 ? '+' : ''}{formatCurrency(success.transaction.difference, account.currency)}
+                              </span>
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <button
                         onClick={handleClose}
                         className="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"

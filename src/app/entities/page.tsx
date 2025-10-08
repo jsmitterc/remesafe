@@ -310,7 +310,7 @@ export default function EntitiesPage() {
 
   return (
     <DashboardLayout>
-      <DataTable
+      <DataTable<Entity>
         title="Entities"
         data={entities}
         columns={columns}

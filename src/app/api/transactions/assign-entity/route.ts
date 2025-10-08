@@ -36,7 +36,7 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
     `;
 
     const [verifyResult] = await pool.execute(verifyQuery, [entityId, user.id, transactionId, user.id]);
-    const verifyData = verifyResult as any[];
+    const verifyData = verifyResult as Array<{ entity_id?: number }>;
 
     if (verifyData.length === 0) {
       return NextResponse.json(
@@ -61,7 +61,7 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
 
     const [result] = await pool.execute(updateQuery, [entityId, transactionId]);
 
-    const affectedRows = (result as any).affectedRows;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows;
 
     if (affectedRows === 0) {
       return NextResponse.json(

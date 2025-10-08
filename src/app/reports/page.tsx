@@ -32,7 +32,7 @@ interface ExpenseCategory {
 
 export default function ReportsPage() {
   const { currentUser } = useAuth();
-  const { accounts, loading: accountsLoading } = useAccountsData(currentUser?.email || null);
+  const { accounts, loading: accountsLoading } = useAccountsData();
 
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState('');

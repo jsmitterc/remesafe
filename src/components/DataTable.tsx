@@ -25,7 +25,7 @@ export interface FilterOption {
   options: { value: string; label: string }[];
 }
 
-interface DataTableProps<T> {
+interface DataTableProps<T extends Record<string, any>> {
   title: string;
   data: T[];
   columns: Column<T>[];
@@ -48,7 +48,7 @@ interface DataTableProps<T> {
   className?: string;
 }
 
-export default function DataTable<T>({
+export default function DataTable<T extends Record<string, any>>({
   title,
   data,
   columns,
@@ -145,7 +145,7 @@ export default function DataTable<T>({
 
   const activeItems = data.filter(item => {
     // Assume items have an 'active' property, otherwise show all
-    return (item as any).active !== 0;
+    return !('active' in item) || (item as { active?: number }).active !== 0;
   });
 
   return (

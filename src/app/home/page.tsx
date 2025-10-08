@@ -6,7 +6,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 
 export default function HomePage() {
   const { currentUser } = useAuth();
-  const { userData, loading: userDataLoading, error: userDataError } = useUserData(currentUser?.email || null);
+  const { userData, loading: userDataLoading, error: userDataError } = useUserData();
 
   return (
     <DashboardLayout>

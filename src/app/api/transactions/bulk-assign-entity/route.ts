@@ -37,7 +37,7 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
     `;
 
     const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, user.id, entityId, user.id]);
-    const { transaction_count, entity_count } = (verifyResult as any)[0];
+    const { transaction_count, entity_count } = (verifyResult as Array<{ transaction_count: number; entity_count: number }>)[0];
 
     if (transaction_count === 0) {
       return NextResponse.json(
@@ -69,7 +69,7 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
     const [result] = await pool.execute(updateQuery, params);
 
     // Get the number of affected rows
-    const affectedRows = (result as any).affectedRows || 0;
+    const affectedRows = (result as { affectedRows?: number }).affectedRows || 0;
 
     return NextResponse.json({
       success: true,
