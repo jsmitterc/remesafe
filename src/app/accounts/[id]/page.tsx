@@ -579,6 +579,24 @@ export default function AccountDetailPage() {
     }
   };
 
+  // Calculate signed transaction amount based on account type and debit/credit
+  const getSignedAmount = (transaction: Transaction) => {
+    if (!account) return 0;
+
+    const accountType = account.account_type;
+    const isDebit = transaction.debitacc === account.account_code;
+    const amount = isDebit ? transaction.debit : transaction.credit;
+
+    // For asset and expense accounts: debit increases (positive), credit decreases (negative)
+    // For liability, equity, and income accounts: debit decreases (negative), credit increases (positive)
+    if (accountType === 'asset' || accountType === 'expense') {
+      return isDebit ? amount : -amount;
+    } else {
+      // liability, equity, income
+      return isDebit ? -amount : amount;
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -1366,16 +1384,7 @@ export default function AccountDetailPage() {
                     Description
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Debit Account
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Credit Account
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Debit
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Credit
+                    Other Account
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Amount
@@ -1407,33 +1416,23 @@ export default function AccountDetailPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <AccountAutocomplete
-                        currentValue={transaction.debitacc}
+                        currentValue={transaction.debitacc === account.account_code ? transaction.creditacc : transaction.debitacc}
                         transactionId={transaction.id}
-                        field="debit"
-                        isIncomplete={transaction.debitacc === '0'}
+                        field={transaction.debitacc === account.account_code ? 'credit' : 'debit'}
+                        isIncomplete={transaction.debitacc === '0' || transaction.creditacc === '0'}
                         transaction={transaction}
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <AccountAutocomplete
-                        currentValue={transaction.creditacc}
-                        transactionId={transaction.id}
-                        field="credit"
-                        isIncomplete={transaction.creditacc === '0'}
-                        transaction={transaction}
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {transaction.debit > 0 ? formatCurrency(transaction.debit, account.currency_code) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {transaction.credit > 0 ? formatCurrency(transaction.credit, account.currency_code) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
-                      {transaction.transaction_type === 'debit' ?
-                        formatCurrency(transaction.debit, account.currency_code) :
-                        formatCurrency(-transaction.credit, account.currency_code)
-                      }
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">
+                      {(() => {
+                        const signedAmount = getSignedAmount(transaction);
+                        const isPositive = signedAmount >= 0;
+                        return (
+                          <span className={isPositive ? 'text-green-600' : 'text-red-600'}>
+                            {isPositive ? '+' : ''}{formatCurrency(signedAmount, account.currency_code)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <EntitySelector
