@@ -592,11 +592,24 @@ export async function importBankStatement(
 
     // Validate that the statement balances correctly
     // Running balance is calculated by simply adding all amounts (positive and negative)
+
+    console.log(statement.openingBalance)
     let runningBalance = statement.openingBalance;
+
+    const debitIncreasesBalance = accountType === 'asset' || accountType === 'expense';
+
+
     for (const transaction of statement.transactions) {
-      runningBalance += transaction.amount;
+        if (debitIncreasesBalance) {
+          // Assets & Expenses
+          runningBalance += transaction.type === 'debit' ? transaction.amount : -transaction.amount;
+        } else {
+          // Liabilities, Equity & Revenues
+          runningBalance += transaction.type === 'credit' ? transaction.amount : -transaction.amount;
+        }
     }
 
+    console.log('Calculated running balance:', runningBalance, 'Expected closing balance:', statement.closingBalance);
     if (Math.abs(runningBalance - statement.closingBalance) > 0.01) {
       return {
         success: false,
