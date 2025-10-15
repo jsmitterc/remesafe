@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAccountById, updateAccount } from '@/lib/database';
 import { createAuthHandler, AuthenticatedRequest } from '@/lib/auth-middleware';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+async function getHandler(
+  request: AuthenticatedRequest
+): Promise<NextResponse> {
   try {
-    const { id } = await params;
-    const accountId = parseInt(id);
+    const user = request.user!;
+    console.log(user);
+
+    // Get account ID from URL (same as PATCH handler)
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/');
+    const accountId = parseInt(pathParts[pathParts.length - 1]);
 
     if (!accountId || isNaN(accountId)) {
       return NextResponse.json({ error: 'Valid account ID is required' }, { status: 400 });
@@ -30,6 +34,8 @@ export async function GET(
     );
   }
 }
+
+export const GET = createAuthHandler(getHandler);
 
 async function patchHandler(
   request: AuthenticatedRequest

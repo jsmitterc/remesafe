@@ -7,7 +7,7 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
     const user = request.user!;
     const body = await request.json();
 
-    const { code, alias, category, currency, balance } = body;
+    const { company, code, alias, category, currency, balance } = body;
 
     // Validate required fields
     if (!code || !alias || !category) {
@@ -25,7 +25,8 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
       currency: currency || 'USD',
       balance: balance || 0,
       active: 1,
-      userId: user.id
+      userId: user.id,
+      companyId: company || null
     });
 
     return NextResponse.json(newAccount, { status: 201 });

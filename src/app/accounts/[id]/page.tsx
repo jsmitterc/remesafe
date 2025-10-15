@@ -9,6 +9,7 @@ import { Account } from '@/lib/database';
 import StatementImportModal from '@/components/StatementImportModal';
 
 interface AccountDetails {
+  company?: number;
   account_id: number;
   account_code: string;
   account_name: string;
@@ -421,8 +422,15 @@ export default function AccountDetailPage() {
     try {
         setLoading(true);
 
+        // Get Firebase ID token for authentication
+        const token = currentUser ? await currentUser.getIdToken() : null;
+
         // Fetch account details
-        const accountResponse = await fetch(`/api/accounts/${accountId}`);
+        const accountResponse = await fetch(`/api/accounts/${accountId}`, {
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
         if (!accountResponse.ok) {
           throw new Error('Failed to fetch account details');
         }
@@ -430,7 +438,11 @@ export default function AccountDetailPage() {
         setAccount(accountData);
 
         // Fetch account transactions
-        const transactionsResponse = await fetch(`/api/transactions/${accountId}`);
+        const transactionsResponse = await fetch(`/api/transactions/${accountId}`, {
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
         if (!transactionsResponse.ok) {
           throw new Error('Failed to fetch transactions');
         }
@@ -729,6 +741,7 @@ export default function AccountDetailPage() {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
+              company: account?.company || '',
               code: newAccountData.code,
               alias: newAccountData.alias,
               category: newAccountData.category,
@@ -1395,8 +1408,8 @@ export default function AccountDetailPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTransactions.map((transaction) => (
-                  <tr key={transaction.id} className={`hover:bg-gray-50 ${selectedTransactions.has(transaction.id) ? 'bg-indigo-50' : ''}`}>
+                {filteredTransactions.map((transaction, index) => (
+                  <tr key={`${transaction.id}-${index}`} className={`hover:bg-gray-50 ${selectedTransactions.has(transaction.id) ? 'bg-indigo-50' : ''}`}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input
                         type="checkbox"

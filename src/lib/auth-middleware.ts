@@ -45,6 +45,7 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
     const decodedToken = await getAuth().verifyIdToken(token);
     const email = decodedToken.email;
 
+    console.log('Decoded token:', decodedToken);
     if (!email) {
       return null;
     }
@@ -75,8 +76,10 @@ export async function withAuth(
 ): Promise<NextResponse> {
   try {
     const authHeader = request.headers.get('authorization');
+    console.log('Auth header:', authHeader ? 'Present' : 'Missing');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('Authorization header missing or invalid format');
       return NextResponse.json(
         { error: 'Missing or invalid authorization header' },
         { status: 401 }
@@ -86,7 +89,9 @@ export async function withAuth(
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
     const user = await verifyBearerToken(token);
 
+    console.log('Verified user:', user)
     if (!user) {
+      console.log('User verification failed - token valid but user not in database');
       return NextResponse.json(
         { error: 'Invalid or expired token' },
         { status: 401 }

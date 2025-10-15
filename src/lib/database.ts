@@ -157,6 +157,7 @@ export async function getAccountsByUserId(userId: number): Promise<Account[]> {
         a.*,
         COALESCE(it.incomplete_count, 0) as incomplete_transactions_count
       FROM rv_cuentas a
+      LEFT JOIN company_user cu ON a.company = cu.company_id
       LEFT JOIN (
         SELECT
           CASE
@@ -169,9 +170,10 @@ export async function getAccountsByUserId(userId: number): Promise<Account[]> {
           AND debitacc != creditacc
         GROUP BY account_code
       ) it ON a.code = it.account_code
-      WHERE a.user = ?
+      WHERE a.user = ? or cu.user_id = ?
+      GROUP BY a.code
       ORDER BY a.alias ASC`,
-      [userId]
+      [userId, userId]
     );
 
     return rows as Account[];
@@ -303,12 +305,13 @@ export async function createAccount(accountData: {
   balance: number;
   active: number;
   userId: number;
+  companyId?: number;
 }): Promise<any> {
   try {
     const [result] = await pool.execute(
       `INSERT INTO rv_cuentas (
         code, alias, category, currency, balance, active, user,
-        date_created, date_updated
+        date_created, date_updated, company
       ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         accountData.code,
@@ -317,7 +320,8 @@ export async function createAccount(accountData: {
         accountData.currency,
         accountData.balance,
         accountData.active,
-        accountData.userId
+        accountData.userId,
+        accountData.companyId || null
       ]
     );
 
@@ -397,8 +401,8 @@ export async function getTransactionsByAccountCode(accountCode: string, limit: n
         comp.name as entity_name,
         comp.code as entity_code
       FROM rv_transaction t
-      LEFT JOIN rv_cuentas c_debit ON t.debitacc = c_debit.code
-      LEFT JOIN rv_cuentas c_credit ON t.creditacc = c_credit.code
+      LEFT JOIN rv_cuentas c_debit ON t.debitacc = c_debit.code AND c_debit.company = t.company
+      LEFT JOIN rv_cuentas c_credit ON t.creditacc = c_credit.code AND c_credit.company = t.company
       LEFT JOIN company comp ON t.company = comp.id
       WHERE t.debitacc = ? OR t.creditacc = ?
       ORDER BY t.fecha DESC, t.id DESC
@@ -580,7 +584,7 @@ export async function importBankStatement(
     }
 
     const account = accounts[0];
-    const accountType = account.category; // 'asset', 'liability', 'equity', 'income', 'expense'
+    const accountType = account.account_type; // 'asset', 'liability', 'equity', 'income', 'expense'
 
     // Validate account type exists
     if (!accountType) {
@@ -593,13 +597,14 @@ export async function importBankStatement(
     // Validate that the statement balances correctly
     // Running balance is calculated by simply adding all amounts (positive and negative)
 
-    console.log(statement.openingBalance)
     let runningBalance = statement.openingBalance;
 
     const debitIncreasesBalance = accountType === 'asset' || accountType === 'expense';
 
 
     for (const transaction of statement.transactions) {
+
+        console.log(transaction)
         if (debitIncreasesBalance) {
           // Assets & Expenses
           runningBalance += transaction.type === 'debit' ? transaction.amount : -transaction.amount;
@@ -607,6 +612,7 @@ export async function importBankStatement(
           // Liabilities, Equity & Revenues
           runningBalance += transaction.type === 'credit' ? transaction.amount : -transaction.amount;
         }
+
     }
 
     console.log('Calculated running balance:', runningBalance, 'Expected closing balance:', statement.closingBalance);
@@ -1373,8 +1379,9 @@ export async function getProfitLossData(
 ): Promise<PLData> {
   try {
     // Build dynamic WHERE conditions and parameters
-    const whereConditions = ['a.user = ?', 'a.active = 1', 'a.account_type IN (\'income\', \'expense\')'];
-    const queryParams: (string | number)[] = [startDate, endDate];
+    const whereConditions = ['a.active = 1', 'a.account_type IN (\'income\', \'expense\')', 'cu.user_id = ?'];
+    const queryParams: (string | number)[] = [startDate, endDate, userId];
+  
 
     // Add entity filter if specified
     let entityJoin = '';
@@ -1390,7 +1397,6 @@ export async function getProfitLossData(
       queryParams.push(currency);
     }
 
-    queryParams.push(userId);
 
     // Query to calculate account balances from transactions within the date range
     // For income accounts: credit increases balance, debit decreases balance
@@ -1412,6 +1418,7 @@ export async function getProfitLossData(
           ELSE 0
         END as total_balance
       FROM rv_cuentas a
+      LEFT JOIN company_user cu ON a.user = cu.user_id
       LEFT JOIN rv_transaction t ON (
         (t.debitacc = a.code OR t.creditacc = a.code)
         AND t.fecha BETWEEN ? AND ?
@@ -1423,7 +1430,12 @@ export async function getProfitLossData(
       ORDER BY a.account_type, a.alias ASC
     `;
 
+    console.log('PL Query Params:', queryParams);
+    console.log('PL Query:', query);
+
     const [rows] = await pool.execute(query, queryParams);
+
+    console.log(rows)
     const accounts = rows as PLAccount[];
 
     // Separate income and expense accounts
@@ -1482,9 +1494,10 @@ export async function getEntitiesByUserId(userId: number): Promise<Entity[]> {
           ELSE NULL
         END) as incomplete_transactions_count
       FROM company c
+      LEFT JOIN company_user cu ON c.id = cu.company_id
       LEFT JOIN rv_cuentas a ON c.id = a.company AND a.active = 1
       LEFT JOIN rv_transaction t ON (t.debitacc = a.code OR t.creditacc = a.code)
-      WHERE c.user_id = ?
+      WHERE cu.user_id = ?
       GROUP BY c.id, c.code, c.sub_code, c.name, c.companyEmail, c.email, c.whatsapp, c.timezone, c.vat, c.organization_id, c.user_id
       ORDER BY c.name ASC
     `;
@@ -1572,6 +1585,143 @@ export async function createEntity(entityData: {
   } catch (error) {
     console.error('Database error:', error);
     throw new Error('Failed to create entity');
+  }
+}
+
+export interface EntityUser {
+  id: number;
+  email: string;
+  name?: string;
+  role?: string;
+  created_at?: string;
+}
+
+export async function getEntityUsers(entityId: number, userId: number): Promise<EntityUser[]> {
+  try {
+    const query = `
+      SELECT
+        l.id,
+        l.email,
+        l.name
+      FROM company_user cu
+      LEFT JOIN login l ON cu.user_id = l.id
+      WHERE cu.company_id = ?
+    `;
+
+    const [rows] = await pool.execute(query, [entityId]);
+    return rows as EntityUser[];
+  } catch (error) {
+    console.error('Database error:', error);
+    throw new Error('Failed to fetch entity users');
+  }
+}
+
+export async function getAccountsByEntityId(entityId: number, userId: number): Promise<Account[]> {
+  try {
+    const query = `
+      SELECT
+        a.*,
+        COALESCE(it.incomplete_count, 0) as incomplete_transactions_count
+      FROM rv_cuentas a
+      LEFT JOIN (
+        SELECT
+          CASE
+            WHEN debitacc = '0' THEN creditacc
+            WHEN creditacc = '0' THEN debitacc
+          END as account_code,
+          COUNT(*) as incomplete_count
+        FROM rv_transaction
+        WHERE (debitacc = '0' OR creditacc = '0')
+          AND debitacc != creditacc
+        GROUP BY account_code
+      ) it ON a.code = it.account_code
+      WHERE a.company = ?
+        AND a.active = 1
+        AND EXISTS (
+          SELECT 1 FROM company_user cu
+          WHERE cu.company_id = ? AND cu.user_id = ?
+        )
+      ORDER BY a.alias ASC
+    `;
+
+    const [rows] = await pool.execute(query, [entityId, entityId, userId]);
+    return rows as Account[];
+  } catch (error) {
+    console.error('Database error:', error);
+    throw new Error('Failed to fetch accounts for entity');
+  }
+}
+
+export async function updateEntityAccountBalances(
+  entityId: number,
+  userId: number
+): Promise<{ success: boolean; updatedCount: number; error?: string }> {
+  try {
+    // Verify user has access to this entity
+    const [entityRows] = await pool.execute(
+      'SELECT 1 FROM company_user WHERE company_id = ? AND user_id = ?',
+      [entityId, userId]
+    );
+
+    if ((entityRows as any[]).length === 0) {
+      return { success: false, updatedCount: 0, error: 'Access denied to this entity' };
+    }
+
+    // Get all accounts for this entity
+    const [accountRows] = await pool.execute(
+      'SELECT id, code, account_type FROM rv_cuentas WHERE company = ? AND active = 1',
+      [entityId]
+    );
+
+    const accounts = accountRows as Array<{ id: number; code: string; account_type: string }>;
+    let updatedCount = 0;
+
+    // Update each account balance based on transactions
+    for (const account of accounts) {
+      // Calculate balance from all transactions
+      // For assets and expenses: debit increases balance, credit decreases
+      // For liabilities, equity, and income: credit increases balance, debit decreases
+      const balanceQuery = `
+        SELECT
+          CASE
+            WHEN ? IN ('asset', 'expense') THEN
+              COALESCE(SUM(CASE WHEN t.debitacc = ? THEN t.debit ELSE 0 END), 0) -
+              COALESCE(SUM(CASE WHEN t.creditacc = ? THEN t.credit ELSE 0 END), 0)
+            ELSE
+              COALESCE(SUM(CASE WHEN t.creditacc = ? THEN t.credit ELSE 0 END), 0) -
+              COALESCE(SUM(CASE WHEN t.debitacc = ? THEN t.debit ELSE 0 END), 0)
+          END as calculated_balance
+        FROM rv_transaction t
+        WHERE (t.debitacc = ? OR t.creditacc = ?)
+          AND t.company = ?
+      `;
+
+      const [balanceRows] = await pool.execute(balanceQuery, [
+        account.account_type,
+        account.code,
+        account.code,
+        account.code,
+        account.code,
+        account.code,
+        account.code,
+        entityId
+      ]);
+
+      const calculatedBalance = (balanceRows as Array<{ calculated_balance: number }>)[0].calculated_balance;
+
+      // Update the account balance
+      await pool.execute(
+        'UPDATE rv_cuentas SET balance = ?, date_updated = NOW() WHERE id = ?',
+        [calculatedBalance, account.id]
+      );
+
+      updatedCount++;
+    }
+
+    return { success: true, updatedCount };
+  } catch (error) {
+    console.error('Database error:', error);
+    return { success: false, updatedCount: 0, error: 'Failed to update account balances' };
   }
 }
 

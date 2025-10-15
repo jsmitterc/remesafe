@@ -9,7 +9,8 @@ import TransactionsModal from '@/components/TransactionsModal';
 import ReconcileModal from '@/components/ReconcileModal';
 import StatementImportModal from '@/components/StatementImportModal';
 import TransactionAssignmentModal from '@/components/TransactionAssignmentModal';
-import { MagnifyingGlassIcon, ArrowPathIcon, EllipsisVerticalIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import AccountActionsMenu from '@/components/AccountActionsMenu';
+import { MagnifyingGlassIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { Account, Transaction } from '@/lib/database';
 
 export default function AccountsPage() {
@@ -19,7 +20,6 @@ export default function AccountsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterCurrency, setFilterCurrency] = useState('');
-  const [openActionMenus, setOpenActionMenus] = useState<Set<number>>(new Set());
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
   const [isReconcileModalOpen, setIsReconcileModalOpen] = useState(false);
@@ -27,16 +27,6 @@ export default function AccountsPage() {
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [incompleteTransactions, setIncompleteTransactions] = useState<Transaction[]>([]);
-
-  const toggleActionMenu = (accountId: number) => {
-    const newOpenMenus = new Set(openActionMenus);
-    if (newOpenMenus.has(accountId)) {
-      newOpenMenus.delete(accountId);
-    } else {
-      newOpenMenus.add(accountId);
-    }
-    setOpenActionMenus(newOpenMenus);
-  };
 
   const handleRowClick = (accountId: number, event: React.MouseEvent) => {
     // Don't navigate if clicking on the actions button or menu
@@ -48,11 +38,6 @@ export default function AccountsPage() {
   };
 
   const handleAction = (accountId: number, action: string) => {
-    // Close the menu
-    const newOpenMenus = new Set(openActionMenus);
-    newOpenMenus.delete(accountId);
-    setOpenActionMenus(newOpenMenus);
-
     // Find the account
     const account = filteredAccounts.find(acc => acc.id === accountId);
 
@@ -112,11 +97,6 @@ export default function AccountsPage() {
 
 
   const handleAssignTransactions = async (accountId: number) => {
-    // Close the menu
-    const newOpenMenus = new Set(openActionMenus);
-    newOpenMenus.delete(accountId);
-    setOpenActionMenus(newOpenMenus);
-
     // Find the account
     const account = filteredAccounts.find(acc => acc.id === accountId);
     if (!account) return;
@@ -142,22 +122,6 @@ export default function AccountsPage() {
     setIsAssignmentModalOpen(false);
     setSelectedTransaction(null);
   };
-
-
-  // Close action menus when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('[data-action-menu]')) {
-        setOpenActionMenus(new Set());
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Filter accounts based on search term, category, and currency, only show active accounts
   const filteredAccounts = accounts.filter(account => {
@@ -395,74 +359,10 @@ export default function AccountsPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <div className="relative" data-action-menu>
-                            <button
-                              onClick={() => toggleActionMenu(account.id)}
-                              className="inline-flex items-center p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 rounded-full"
-                            >
-                              <EllipsisVerticalIcon className="h-5 w-5" />
-                            </button>
-
-                            {openActionMenus.has(account.id) && (
-                              <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg z-50 ring-1 ring-black ring-opacity-5 transform -translate-x-0">
-                                <div className="py-1">
-                                  <button
-                                    onClick={() => handleAction(account.id, 'view')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    View Details
-                                  </button>
-                                  <button
-                                    onClick={() => handleAction(account.id, 'edit')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    Edit Account
-                                  </button>
-                                  <button
-                                    onClick={() => handleAction(account.id, 'transactions')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    View Transactions
-                                  </button>
-                                  <button
-                                    onClick={() => handleAction(account.id, 'reconcile')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-indigo-600 hover:bg-indigo-50"
-                                  >
-                                    Reconcile Account
-                                  </button>
-                                  <button
-                                    onClick={() => handleAction(account.id, 'import-statement')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50"
-                                  >
-                                    Import Statement
-                                  </button>
-                                  {(account.incomplete_transactions_count || 0) > 0 && (
-                                    <button
-                                      onClick={() => handleAction(account.id, 'assign-transactions')}
-                                      className="block w-full text-left px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50 flex items-center"
-                                    >
-                                      <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
-                                      Assign Transactions ({account.incomplete_transactions_count})
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleAction(account.id, 'statements')}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                  >
-                                    Download Statement
-                                  </button>
-                                  <div className="border-t border-gray-100">
-                                    <button
-                                      onClick={() => handleAction(account.id, 'deactivate')}
-                                      className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                    >
-                                      Deactivate Account
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                          <AccountActionsMenu
+                            account={account}
+                            onAction={handleAction}
+                          />
                         </td>
                       </tr>
                     ))}

@@ -41,6 +41,9 @@ export default function ProfitLossPage() {
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [entities, setEntities] = useState<Entity[]>([]);
   const [currencies, setCurrencies] = useState<string[]>([]);
+  const [showUpdateBalancesModal, setShowUpdateBalancesModal] = useState(false);
+  const [entityToUpdate, setEntityToUpdate] = useState('');
+  const [isUpdatingBalances, setIsUpdatingBalances] = useState(false);
 
   const getCurrentMonthDates = () => {
     const now = new Date();
@@ -126,8 +129,8 @@ export default function ProfitLossPage() {
 
       const { start, end } = getPeriodDates();
 
+      // Skip fetching if in custom mode but dates aren't set yet
       if (selectedPeriod === 'custom' && (!start || !end)) {
-        setError('Please select both start and end dates for custom period');
         setLoading(false);
         return;
       }
@@ -177,8 +180,11 @@ export default function ProfitLossPage() {
   }, [currentUser]);
 
   useEffect(() => {
-    fetchPLData();
-  }, [currentUser, selectedPeriod, customStartDate, customEndDate, selectedEntity, selectedCurrency]);
+    // Only auto-fetch for non-custom periods
+    if (selectedPeriod !== 'custom') {
+      fetchPLData();
+    }
+  }, [currentUser, selectedPeriod, selectedEntity, selectedCurrency]);
 
   const formatCurrency = (amount: number, currencyCode: string) => {
     try {
@@ -216,6 +222,42 @@ export default function ProfitLossPage() {
         return `Custom Period (${startDate} - ${endDate})`;
       default:
         return `${startDate} - ${endDate}`;
+    }
+  };
+
+  const handleUpdateBalances = async () => {
+    if (!entityToUpdate || !currentUser) return;
+
+    setIsUpdatingBalances(true);
+    try {
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch(`/api/entities/${entityToUpdate}/update-balances`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message || 'Account balances updated successfully!');
+        setShowUpdateBalancesModal(false);
+        setEntityToUpdate('');
+        // Refresh P&L data if the updated entity is currently selected
+        if (selectedEntity === entityToUpdate) {
+          fetchPLData();
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update balances');
+      }
+    } catch (error) {
+      console.error('Failed to update balances:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update balances');
+    } finally {
+      setIsUpdatingBalances(false);
     }
   };
 
@@ -259,13 +301,21 @@ export default function ProfitLossPage() {
     <DashboardLayout>
       <div className="p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Profit & Loss Statement
-        </h1>
-        <p className="text-gray-600">
-          {plData && getPeriodLabel()}
-        </p>
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            Profit & Loss Statement
+          </h1>
+          <p className="text-gray-600">
+            {plData && getPeriodLabel()}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowUpdateBalancesModal(true)}
+          className="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+        >
+          Update Balances
+        </button>
       </div>
 
       {/* Filters */}
@@ -353,6 +403,15 @@ export default function ProfitLossPage() {
                   onChange={(e) => setCustomEndDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={() => fetchPLData()}
+                  disabled={!customStartDate || !customEndDate || loading}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Searching...' : 'Search'}
+                </button>
               </div>
             </>
           )}
@@ -514,6 +573,56 @@ export default function ProfitLossPage() {
       {plData && plData.income_accounts.length === 0 && plData.expense_accounts.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm border p-6 text-center text-gray-500">
           No income or expense transactions found for the selected period.
+        </div>
+      )}
+
+      {/* Update Balances Modal */}
+      {showUpdateBalancesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Update Account Balances</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              This will recalculate all account balances for the selected entity based on their transactions.
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Entity
+              </label>
+              <select
+                value={entityToUpdate}
+                onChange={(e) => setEntityToUpdate(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Choose an entity...</option>
+                {entities.map((entity) => (
+                  <option key={entity.id} value={entity.id.toString()}>
+                    {entity.name || 'Unnamed Entity'} ({entity.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowUpdateBalancesModal(false);
+                  setEntityToUpdate('');
+                }}
+                disabled={isUpdatingBalances}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateBalances}
+                disabled={!entityToUpdate || isUpdatingBalances}
+                className="flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isUpdatingBalances ? 'Updating...' : 'Update Balances'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       </div>
