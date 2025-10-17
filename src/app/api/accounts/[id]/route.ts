@@ -20,6 +20,8 @@ async function getHandler(
 
     const account = await getAccountById(accountId);
 
+    console.log(account);
+
     if (!account) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }

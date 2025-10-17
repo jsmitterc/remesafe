@@ -66,6 +66,26 @@ export default function ProfitLossPage() {
     };
   };
 
+  const getLastNMonthsDates = (months: number) => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Last day of current month
+    const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1); // First day of N months ago
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    };
+  };
+
+  const getCurrentYearDates = () => {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Last day of current month
+    const start = new Date(now.getFullYear(), 0, 1); // January 1st of current year
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0]
+    };
+  };
+
   const getPeriodDates = () => {
     switch (selectedPeriod) {
       case 'current-month':
@@ -74,6 +94,12 @@ export default function ProfitLossPage() {
         return getMonthDates(1);
       case 'two-months-ago':
         return getMonthDates(2);
+      case 'last-3-months':
+        return getLastNMonthsDates(3);
+      case 'last-6-months':
+        return getLastNMonthsDates(6);
+      case 'current-year':
+        return getCurrentYearDates();
       case 'custom':
         return {
           start: customStartDate,
@@ -218,6 +244,12 @@ export default function ProfitLossPage() {
         return `Last Month (${startDate} - ${endDate})`;
       case 'two-months-ago':
         return `Two Months Ago (${startDate} - ${endDate})`;
+      case 'last-3-months':
+        return `Last 3 Months (${startDate} - ${endDate})`;
+      case 'last-6-months':
+        return `Last 6 Months (${startDate} - ${endDate})`;
+      case 'current-year':
+        return `Current Year (${startDate} - ${endDate})`;
       case 'custom':
         return `Custom Period (${startDate} - ${endDate})`;
       default:
@@ -376,6 +408,9 @@ export default function ProfitLossPage() {
                   <option value="current-month">This Month</option>
                   <option value="last-month">Last Month</option>
                   <option value="two-months-ago">Two Months Ago</option>
+                  <option value="last-3-months">Last 3 Months</option>
+                  <option value="last-6-months">Last 6 Months</option>
+                  <option value="current-year">Current Year</option>
                   <option value="custom">Custom Period</option>
                 </select>
               </div>

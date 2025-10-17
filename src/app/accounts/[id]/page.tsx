@@ -435,6 +435,7 @@ export default function AccountDetailPage() {
           throw new Error('Failed to fetch account details');
         }
         const accountData = await accountResponse.json();
+        console.log(accountData)
         setAccount(accountData);
 
         // Fetch account transactions
@@ -453,8 +454,8 @@ export default function AccountDetailPage() {
         if (currentUser) {
           const token = await currentUser.getIdToken();
 
-          // Fetch accounts
-          const accountsResponse = await fetch('/api/accounts/me', {
+          // Fetch accounts for the same entity as the current account
+          const accountsResponse = await fetch(`/api/accounts/me?entity_id=${accountData.company}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
@@ -752,6 +753,19 @@ export default function AccountDetailPage() {
           });
 
           if (response.ok) {
+            // Refetch accounts list to update activeAccounts state
+            const token = await currentUser.getIdToken();
+            const accountsResponse = await fetch(`/api/accounts/me?entity_id=${account?.company}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            if (accountsResponse.ok) {
+              const accountsData = await accountsResponse.json();
+              setActiveAccounts(accountsData || []);
+            }
+
             // Assign the newly created account to the transaction
             await handleAccountAssignment(transactionId, newAccountData.code, field);
 

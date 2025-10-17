@@ -39,13 +39,11 @@ export interface AuthenticatedRequest extends NextRequest {
 
 export async function verifyBearerToken(token: string): Promise<AuthenticatedUser | null> {
   try {
-    console.log('Verifying token:', token.substring(0, 20) + '...');
 
     // Verify the Firebase ID token
     const decodedToken = await getAuth().verifyIdToken(token);
     const email = decodedToken.email;
 
-    console.log('Decoded token:', decodedToken);
     if (!email) {
       return null;
     }
@@ -65,7 +63,6 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
       firebaseUid: decodedToken.uid
     };
   } catch (error) {
-    console.error('Token verification failed:', error);
     return null;
   }
 }
@@ -89,7 +86,6 @@ export async function withAuth(
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
     const user = await verifyBearerToken(token);
 
-    console.log('Verified user:', user)
     if (!user) {
       console.log('User verification failed - token valid but user not in database');
       return NextResponse.json(

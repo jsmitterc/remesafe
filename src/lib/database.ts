@@ -210,6 +210,7 @@ export async function getAccountById(accountId: number): Promise<any> {
         account_type,
         currency as currency_code,
         balance as current_balance,
+        company,
         CASE WHEN active = 1 THEN 'Active' ELSE 'Inactive' END as account_status,
         date_created as created_at,
         date_updated as updated_at
@@ -312,7 +313,7 @@ export async function createAccount(accountData: {
       `INSERT INTO rv_cuentas (
         code, alias, category, currency, balance, active, user,
         date_created, date_updated, company
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
       [
         accountData.code,
         accountData.alias,
@@ -1381,13 +1382,11 @@ export async function getProfitLossData(
     // Build dynamic WHERE conditions and parameters
     const whereConditions = ['a.active = 1', 'a.account_type IN (\'income\', \'expense\')', 'cu.user_id = ?'];
     const queryParams: (string | number)[] = [startDate, endDate, userId];
-  
 
-    // Add entity filter if specified
-    let entityJoin = '';
+    // Add entity filter if specified - if entityId is provided, only get that specific entity
+    // Otherwise, get all entities related to the user from company_user table
     if (entityId) {
-      entityJoin = 'LEFT JOIN company comp ON t.company = comp.id';
-      whereConditions.push('t.company = ?');
+      whereConditions.push('a.company = ?');
       queryParams.push(entityId);
     }
 
@@ -1397,10 +1396,10 @@ export async function getProfitLossData(
       queryParams.push(currency);
     }
 
-
     // Query to calculate account balances from transactions within the date range
     // For income accounts: credit increases balance, debit decreases balance
     // For expense accounts: debit increases balance, credit decreases balance
+    // Join with company_user to get entities related to the user
     const query = `
       SELECT
         a.code,
@@ -1418,12 +1417,12 @@ export async function getProfitLossData(
           ELSE 0
         END as total_balance
       FROM rv_cuentas a
-      LEFT JOIN company_user cu ON a.user = cu.user_id
+      INNER JOIN company_user cu ON a.company = cu.company_id
       LEFT JOIN rv_transaction t ON (
         (t.debitacc = a.code OR t.creditacc = a.code)
         AND t.fecha BETWEEN ? AND ?
+        AND t.company = a.company
       )
-      ${entityJoin}
       WHERE ${whereConditions.join(' AND ')}
       GROUP BY a.id, a.code, a.alias, a.category, a.account_type, a.currency
       HAVING total_balance != 0
