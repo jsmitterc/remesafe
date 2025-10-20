@@ -9,6 +9,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  charset: 'utf8mb4',
 });
 
 export interface LoginUser {
@@ -1047,22 +1048,11 @@ export async function getIncompleteTransactionsByAccount(
 
 export async function assignAccountToTransaction(
   transactionId: number,
-  assignedAccountCode: string,
+  assignedAccountId: number,
   isDebitAccount: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // Verify the assigned account exists
-    const [accountRows] = await pool.execute(
-      'SELECT code, alias, account_type FROM rv_cuentas WHERE code = ? AND active = 1',
-      [assignedAccountCode]
-    );
-
-    const accounts = accountRows as Account[];
-    if (accounts.length === 0) {
-      return { success: false, error: 'Assigned account not found or inactive' };
-    }
-
-    // Get the current transaction
+    // Get the current transaction first to get its company/entity
     const [transactionRows] = await pool.execute(
       'SELECT * FROM rv_transaction WHERE id = ?',
       [transactionId]
@@ -1075,6 +1065,24 @@ export async function assignAccountToTransaction(
 
     const transaction = transactions[0];
 
+    // Verify the assigned account exists and belongs to the same company as the transaction
+    const [accountRows] = await pool.execute(
+      'SELECT id, code, alias, account_type, company FROM rv_cuentas WHERE id = ? AND active = 1',
+      [assignedAccountId]
+    );
+
+    const accounts = accountRows as Account[];
+    if (accounts.length === 0) {
+      return { success: false, error: 'Assigned account not found or inactive' };
+    }
+
+    const assignedAccount = accounts[0];
+
+    // Verify account belongs to same entity as transaction
+    if (assignedAccount.company !== transaction.company) {
+      return { success: false, error: 'Account and transaction must belong to the same entity' };
+    }
+
     // Determine which field to update - allow overwriting existing assignments
     let updateQuery: string;
 
@@ -1086,8 +1094,8 @@ export async function assignAccountToTransaction(
       updateQuery = 'UPDATE rv_transaction SET creditacc = ? WHERE id = ?';
     }
 
-    // Update the transaction
-    await pool.execute(updateQuery, [assignedAccountCode.code, transactionId]);
+    // Update the transaction with the account CODE (transactions still store codes)
+    await pool.execute(updateQuery, [assignedAccount.code, transactionId]);
 
     return { success: true };
 
@@ -1267,7 +1275,7 @@ export async function bulkUpdateTransactionsClassification(
 
 export async function bulkAssignAccountToTransactions(
   transactionIds: number[],
-  assignedAccountCode: string,
+  assignedAccountId: number,
   isDebitAccount: boolean,
   userId: number
 ): Promise<{ updatedCount: number }> {
@@ -1275,24 +1283,31 @@ export async function bulkAssignAccountToTransactions(
     // Create placeholders for the IN clause
     const placeholders = transactionIds.map(() => '?').join(',');
 
-    // First, verify that all transactions belong to the user and the assigned account exists
-    const verifyQuery = `
-      SELECT
-        (SELECT COUNT(*) FROM rv_transaction t
-         JOIN rv_cuentas a ON (t.debitacc = a.code OR t.creditacc = a.code)
-         WHERE t.id IN (${placeholders}) AND a.user = ?) as transaction_count,
-        (SELECT COUNT(*) FROM rv_cuentas WHERE code = ? AND user = ? AND active = 1) as account_count
-    `;
+    // First, verify the assigned account exists and get its code and company
+    const [accountRows] = await pool.execute(
+      'SELECT id, code, company FROM rv_cuentas WHERE id = ? AND active = 1',
+      [assignedAccountId]
+    );
 
-    const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, userId, assignedAccountCode.code, userId]);
-    const { transaction_count, account_count } = (verifyResult as Array<{ transaction_count: number; account_count: number }>)[0];
-
-    if (transaction_count === 0) {
-      throw new Error('No transactions found or access denied');
+    const accounts = accountRows as Array<{ id: number; code: string; company: number }>;
+    if (accounts.length === 0) {
+      throw new Error('Assigned account not found or inactive');
     }
 
-    if (account_count === 0) {
-      throw new Error('Assigned account not found or access denied');
+    const assignedAccount = accounts[0];
+
+    // Verify that all transactions belong to the same company as the assigned account
+    const verifyQuery = `
+      SELECT COUNT(*) as count
+      FROM rv_transaction t
+      WHERE t.id IN (${placeholders}) AND t.company = ?
+    `;
+
+    const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, assignedAccount.company]);
+    const verifyCount = (verifyResult as Array<{ count: number }>)[0].count;
+
+    if (verifyCount !== transactionIds.length) {
+      throw new Error('Some transactions do not belong to the same entity as the assigned account');
     }
 
     // Update the transactions - assign to debit or credit field
@@ -1301,14 +1316,10 @@ export async function bulkAssignAccountToTransactions(
       UPDATE rv_transaction t
       SET t.${updateField} = ?
       WHERE t.id IN (${placeholders})
-      AND EXISTS (
-        SELECT 1 FROM rv_cuentas a
-        WHERE (t.debitacc = a.code OR t.creditacc = a.code)
-        AND a.user = ?
-      )
+      AND t.company = ?
     `;
 
-    const params = [assignedAccountCode.code, ...transactionIds, userId];
+    const params = [assignedAccount.code, ...transactionIds, assignedAccount.company];
     const [result] = await pool.execute(updateQuery, params);
 
     // Get the number of affected rows

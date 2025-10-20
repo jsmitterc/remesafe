@@ -270,7 +270,7 @@ export default function AccountDetailPage() {
         },
         body: JSON.stringify({
           transactionIds,
-          assignedAccountCode: bulkAssignAccount,
+          assignedAccountId: bulkAssignAccount,
         }),
       });
 
@@ -546,17 +546,17 @@ export default function AccountDetailPage() {
     }
   }, [accountId]);
 
-  const handleAccountAssignment = async (transactionId: number, accountCode: string, field: 'debit' | 'credit') => {
+  const handleAccountAssignment = async (transactionId: number, assignedAccountId: number, field: 'debit' | 'credit') => {
     try {
       console.log('Setting assigningTransaction to:', transactionId);
       setAssigningTransaction(transactionId);
 
-      console.log('Assignment params:', { transactionId, accountCode, field, isDebitAccount: field === 'debit' });
+      console.log('Assignment params:', { transactionId, assignedAccountId, field, isDebitAccount: field === 'debit' });
 
       const token = localStorage.getItem('token');
       const requestBody = {
         transactionId,
-        assignedAccountCode: accountCode,
+        assignedAccountId: assignedAccountId,
         isDebitAccount: field === 'debit'
       };
 
@@ -572,7 +572,7 @@ export default function AccountDetailPage() {
       });
 
       if (response.ok) {
-        // Refresh transactions to show updated data
+        // Refresh transactions to show updated data - use the page's accountId from params, not the function parameter
         const transactionsResponse = await fetch(`/api/transactions/${accountId}`);
         if (transactionsResponse.ok) {
           const transactionsData = await transactionsResponse.json();
@@ -787,6 +787,8 @@ export default function AccountDetailPage() {
           });
 
           if (response.ok) {
+            const createdAccount = await response.json();
+
             // Refetch accounts list to update activeAccounts state
             const token = await currentUser.getIdToken();
             const accountsResponse = await fetch(`/api/accounts/me?entity_id=${account?.company}`, {
@@ -800,8 +802,8 @@ export default function AccountDetailPage() {
               setActiveAccounts(accountsData || []);
             }
 
-            // Assign the newly created account to the transaction
-            await handleAccountAssignment(transactionId, newAccountData.code, field);
+            // Assign the newly created account to the transaction using its ID
+            await handleAccountAssignment(transactionId, createdAccount.id, field);
 
             // Reset form and close
             setNewAccountData({ code: '', alias: '', category: '' });
@@ -1011,7 +1013,7 @@ export default function AccountDetailPage() {
                   <button
                     key={account.id}
                     onClick={() => {
-                      handleAccountAssignment(transactionId, account.code, field);
+                      handleAccountAssignment(transactionId, account.id, field);
                       setIsOpen(false);
                       setSearchTerm('');
                       setTypeFilter('');
@@ -1369,7 +1371,7 @@ export default function AccountDetailPage() {
                   {Array.isArray(activeAccounts) && activeAccounts
                     .filter(acc => acc.currency === account?.currency_code)
                     .map((acc) => (
-                      <option key={acc.id} value={acc.code}>
+                      <option key={acc.id} value={acc.id}>
                         {acc.code} - {acc.alias}
                       </option>
                     ))}

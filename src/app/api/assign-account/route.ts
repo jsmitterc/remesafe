@@ -4,42 +4,43 @@ import { assignAccountToTransaction } from '@/lib/database';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { transactionId, assignedAccountCode, isDebitAccount } = body;
+    const { transactionId, assignedAccountId, isDebitAccount } = body;
 
-    console.log('API received:', { transactionId, assignedAccountCode, isDebitAccount, body });
+    console.log('API received:', { transactionId, assignedAccountId, isDebitAccount, body });
     console.log('Types:', {
       transactionIdType: typeof transactionId,
-      assignedAccountCodeType: typeof assignedAccountCode,
+      assignedAccountIdType: typeof assignedAccountId,
       isDebitAccountType: typeof isDebitAccount
     });
 
     // Validate required fields
-    if (!transactionId || !assignedAccountCode || typeof isDebitAccount !== 'boolean') {
+    if (!transactionId || !assignedAccountId || typeof isDebitAccount !== 'boolean') {
       console.log('Validation failed:', {
         hasTransactionId: !!transactionId,
         transactionIdValue: transactionId,
-        hasAssignedAccountCode: !!assignedAccountCode,
-        assignedAccountCodeValue: assignedAccountCode,
+        hasAssignedAccountId: !!assignedAccountId,
+        assignedAccountIdValue: assignedAccountId,
         isDebitAccountType: typeof isDebitAccount,
         isDebitAccountValue: isDebitAccount
       });
       return NextResponse.json({
-        error: 'Transaction ID, assigned account code, and account type (debit/credit) are required'
+        error: 'Transaction ID, assigned account ID, and account type (debit/credit) are required'
       }, { status: 400 });
     }
 
-    // Validate transaction ID is a number
+    // Validate IDs are numbers
     const txnId = parseInt(transactionId);
-    if (isNaN(txnId)) {
-      return NextResponse.json({ error: 'Invalid transaction ID' }, { status: 400 });
+    const accId = parseInt(assignedAccountId);
+    if (isNaN(txnId) || isNaN(accId)) {
+      return NextResponse.json({ error: 'Invalid transaction or account ID' }, { status: 400 });
     }
 
-    const result = await assignAccountToTransaction(txnId, assignedAccountCode, isDebitAccount);
+    const result = await assignAccountToTransaction(txnId, accId, isDebitAccount);
 
     if (result.success) {
       return NextResponse.json({
         success: true,
-        message: `Account ${assignedAccountCode} assigned successfully`
+        message: `Account assigned successfully`
       });
     } else {
       return NextResponse.json(

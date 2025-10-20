@@ -8,28 +8,31 @@ async function postHandler(
   try {
     const user = request.user!;
     const body = await request.json();
-    const { transactionIds, assignedAccountCode } = body;
+    const { transactionIds, assignedAccountId } = body;
 
     if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
       return NextResponse.json({ error: 'Transaction IDs are required' }, { status: 400 });
     }
 
-    if (!assignedAccountCode) {
-      return NextResponse.json({ error: 'Account code is required' }, { status: 400 });
+    if (!assignedAccountId) {
+      return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
     }
 
-    // Verify the assigned account exists and user has access
+    // Verify the assigned account exists and user has access, and get its code
     const [accountRows] = await pool.execute(
-      `SELECT a.code, a.alias, a.company
+      `SELECT a.id, a.code, a.alias, a.company
        FROM rv_cuentas a
        LEFT JOIN company_user cu ON a.company = cu.company_id
-       WHERE a.code = ? AND a.active = 1 AND (a.user = ? OR cu.user_id = ?)`,
-      [assignedAccountCode, user.id, user.id]
+       WHERE a.id = ? AND a.active = 1 AND (a.user = ? OR cu.user_id = ?)`,
+      [assignedAccountId, user.id, user.id]
     );
 
-    if ((accountRows as any[]).length === 0) {
+    const accounts = accountRows as Array<{ id: number; code: string; alias: string; company: number }>;
+    if (accounts.length === 0) {
       return NextResponse.json({ error: 'Assigned account not found or access denied' }, { status: 400 });
     }
+
+    const assignedAccount = accounts[0];
 
     // Get all selected transactions and check access
     const placeholders = transactionIds.map(() => '?').join(',');
@@ -59,6 +62,12 @@ async function postHandler(
 
     // Process each transaction
     for (const transaction of transactions) {
+      // Verify transaction belongs to same company as assigned account
+      if (transaction.company !== assignedAccount.company) {
+        skippedCount++;
+        continue;
+      }
+
       // Skip if both accounts are already filled
       if (transaction.debitacc !== '0' && transaction.creditacc !== '0') {
         skippedCount++;
@@ -80,7 +89,7 @@ async function postHandler(
       }
 
       if (updateQuery) {
-        await pool.execute(updateQuery, [assignedAccountCode, transaction.id]);
+        await pool.execute(updateQuery, [assignedAccount.code, transaction.id]);
         updatedCount++;
       }
     }
