@@ -182,7 +182,6 @@ export default function AccountDetailPage() {
   const [assigningEntity, setAssigningEntity] = useState<number | null>(null);
   const [selectedTransactions, setSelectedTransactions] = useState<Set<number>>(new Set());
   const [bulkAssignAccount, setBulkAssignAccount] = useState('');
-  const [bulkAssignType, setBulkAssignType] = useState<'debit' | 'credit'>('debit');
   const [bulkAssignEntity, setBulkAssignEntity] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [accountFilter, setAccountFilter] = useState<'all' | 'empty' | 'filled'>('all');
@@ -190,6 +189,7 @@ export default function AccountDetailPage() {
   const [editedAccount, setEditedAccount] = useState<Partial<AccountDetails>>({});
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isUpdatingBalances, setIsUpdatingBalances] = useState(false);
 
   // Multi-select functions for transactions
   const toggleTransactionSelection = (transactionId: number) => {
@@ -247,10 +247,22 @@ export default function AccountDetailPage() {
     try {
       const transactionIds = Array.from(selectedTransactions);
 
+      // Check which transactions have empty accounts and determine if they can be bulk assigned
+      const selectedTxns = transactions.filter(t => selectedTransactions.has(t.id));
+      const hasInvalidSelections = selectedTxns.some(t => t.debitacc !== '0' && t.creditacc !== '0');
+
+      if (hasInvalidSelections) {
+        const confirmed = confirm(
+          'Some selected transactions already have both accounts filled. ' +
+          'These will be skipped. Do you want to continue?'
+        );
+        if (!confirmed) return;
+      }
+
       // Get Firebase ID token for authentication
       const token = currentUser ? await currentUser.getIdToken() : null;
 
-      const response = await fetch('/api/transactions/bulk-assign', {
+      const response = await fetch('/api/transactions/bulk-assign-smart', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -259,18 +271,18 @@ export default function AccountDetailPage() {
         body: JSON.stringify({
           transactionIds,
           assignedAccountCode: bulkAssignAccount,
-          isDebitAccount: bulkAssignType === 'debit',
         }),
       });
 
       if (response.ok) {
+        const data = await response.json();
         // Refresh transactions data
         fetchAccountDetails();
         // Clear selection
         clearTransactionSelection();
         setBulkAssignAccount('');
         // Show success message
-        alert(`Successfully assigned ${transactionIds.length} transaction${transactionIds.length !== 1 ? 's' : ''}`);
+        alert(data.message || `Successfully assigned ${data.updatedCount || transactionIds.length} transaction${transactionIds.length !== 1 ? 's' : ''}`);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to assign accounts');
@@ -318,6 +330,48 @@ export default function AccountDetailPage() {
     } catch (error) {
       console.error('Failed to assign entity:', error);
       alert(error instanceof Error ? error.message : 'Failed to assign entity');
+    }
+  };
+
+  // Update balance handler for current account only
+  const handleUpdateBalance = async () => {
+    if (!account?.account_id || !currentUser) {
+      alert('Unable to update balance: Account information not available');
+      return;
+    }
+
+    const confirmed = confirm(
+      'This will recalculate the balance for this account based on all its transactions. Continue?'
+    );
+
+    if (!confirmed) return;
+
+    setIsUpdatingBalances(true);
+    try {
+      const token = await currentUser.getIdToken();
+
+      const response = await fetch(`/api/accounts/${account.account_id}/update-balance`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(data.message || 'Account balance updated successfully!');
+        // Refresh account details to show updated balance
+        fetchAccountDetails();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update balance');
+      }
+    } catch (error) {
+      console.error('Failed to update balance:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update balance');
+    } finally {
+      setIsUpdatingBalances(false);
     }
   };
 
@@ -643,35 +697,15 @@ export default function AccountDetailPage() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const isSelectingRef = useRef(false);
 
-    if (!isIncomplete) {
-      // Show read-only for complete transactions with alias from transaction data
-      let aliasToShow = '';
-      if (field === 'debit' && transaction.transaction_type === 'credit' && transaction.other_account_alias) {
-        aliasToShow = transaction.other_account_alias;
-      } else if (field === 'credit' && transaction.transaction_type === 'debit' && transaction.other_account_alias) {
-        aliasToShow = transaction.other_account_alias;
-      } else if (Array.isArray(activeAccounts)) {
-        const accountInfo = activeAccounts.find(acc => acc.code === currentValue);
-        aliasToShow = accountInfo?.alias || '';
-      }
-
-      return (
-        <div className="relative">
-          <div className="font-medium">{currentValue || '-'}</div>
-          {aliasToShow && (
-            <div className="text-xs text-gray-400">{aliasToShow}</div>
-          )}
-          {/* Loading overlay for complete transactions */}
-          {assigningTransaction === transactionId && (
-            <div className="absolute inset-0 bg-blue-50 bg-opacity-75 flex items-center justify-center rounded">
-              <div className="flex items-center text-xs text-blue-600">
-                <div className="animate-spin h-3 w-3 border border-blue-500 border-t-transparent rounded-full mr-1"></div>
-                Assigning...
-              </div>
-            </div>
-          )}
-        </div>
-      );
+    // Get the alias to show
+    let aliasToShow = '';
+    if (field === 'debit' && transaction.transaction_type === 'credit' && transaction.other_account_alias) {
+      aliasToShow = transaction.other_account_alias;
+    } else if (field === 'credit' && transaction.transaction_type === 'debit' && transaction.other_account_alias) {
+      aliasToShow = transaction.other_account_alias;
+    } else if (Array.isArray(activeAccounts)) {
+      const accountInfo = activeAccounts.find(acc => acc.code === currentValue);
+      aliasToShow = accountInfo?.alias || '';
     }
 
     const filteredAccounts = Array.isArray(activeAccounts) ?
@@ -797,33 +831,46 @@ export default function AccountDetailPage() {
             </div>
           </div>
         )}
-        <div className="flex items-center">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setIsOpen(true);
-            }}
-            onFocus={() => {
-              setIsOpen(true);
-              // Show all accounts when first focused if no search term
-              if (!searchTerm) {
+        <div className="flex flex-col">
+          {!isOpen && currentValue && currentValue !== '0' ? (
+            <button
+              onClick={() => {
+                setIsOpen(true);
                 setSearchTerm('');
-              }
-            }}
-            onBlur={() => {
-              setTimeout(() => {
-                if (!isSelectingRef.current) {
-                  setIsOpen(false);
-                }
-                isSelectingRef.current = false;
-              }, 150);
-            }}
-            placeholder="Select account..."
-            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            disabled={assigningTransaction === transactionId}
-          />
+              }}
+              disabled={assigningTransaction === transactionId}
+              className="text-left px-2 py-1 text-sm hover:bg-gray-50 border border-transparent hover:border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+            >
+              <div className="font-medium text-gray-900">{currentValue}</div>
+              {aliasToShow && (
+                <div className="text-xs text-gray-500">{aliasToShow}</div>
+              )}
+            </button>
+          ) : (
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setIsOpen(true);
+              }}
+              onFocus={() => {
+                setIsOpen(true);
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  if (!isSelectingRef.current) {
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }
+                  isSelectingRef.current = false;
+                }, 150);
+              }}
+              placeholder={currentValue && currentValue !== '0' ? `Change from ${currentValue}...` : "Select account..."}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              disabled={assigningTransaction === transactionId}
+            />
+          )}
         </div>
 
         {isOpen && (
@@ -1060,6 +1107,14 @@ export default function AccountDetailPage() {
           </div>
 
           <div className="flex items-center space-x-4">
+            <button
+              onClick={handleUpdateBalance}
+              disabled={isUpdatingBalances}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isUpdatingBalances ? 'Updating...' : 'Update Balance'}
+            </button>
+
             <button
               onClick={() => setIsImportModalOpen(true)}
               className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -1306,14 +1361,6 @@ export default function AccountDetailPage() {
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-medium text-gray-700 min-w-max">Account Assignment:</span>
                 <select
-                  value={bulkAssignType}
-                  onChange={(e) => setBulkAssignType(e.target.value as 'debit' | 'credit')}
-                  className="text-sm border border-gray-300 rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="debit">Assign Debit Account</option>
-                  <option value="credit">Assign Credit Account</option>
-                </select>
-                <select
                   value={bulkAssignAccount}
                   onChange={(e) => setBulkAssignAccount(e.target.value)}
                   className="text-sm border border-gray-300 rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-48"
@@ -1332,8 +1379,11 @@ export default function AccountDetailPage() {
                   disabled={!bulkAssignAccount}
                   className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Assign Account
+                  Assign to Empty Field
                 </button>
+                <span className="text-xs text-gray-500 italic">
+                  (Assigns to empty debit or credit field only)
+                </span>
               </div>
 
               {/* Entity Assignment Row */}

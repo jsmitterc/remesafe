@@ -1068,20 +1068,14 @@ export async function assignAccountToTransaction(
 
     const transaction = transactions[0];
 
-    // Determine which field to update
+    // Determine which field to update - allow overwriting existing assignments
     let updateQuery: string;
 
     if (isDebitAccount) {
-      // Assign to debit account (if debitacc is '0')
-      if (transaction.debitacc !== '0') {
-        return { success: false, error: 'Debit account is already assigned' };
-      }
+      // Assign to debit account (allow overwrite)
       updateQuery = 'UPDATE rv_transaction SET debitacc = ? WHERE id = ?';
     } else {
-      // Assign to credit account (if creditacc is '0')
-      if (transaction.creditacc !== '0') {
-        return { success: false, error: 'Credit account is already assigned' };
-      }
+      // Assign to credit account (allow overwrite)
       updateQuery = 'UPDATE rv_transaction SET creditacc = ? WHERE id = ?';
     }
 
@@ -1648,6 +1642,71 @@ export async function getAccountsByEntityId(entityId: number, userId: number): P
   } catch (error) {
     console.error('Database error:', error);
     throw new Error('Failed to fetch accounts for entity');
+  }
+}
+
+export async function updateSingleAccountBalance(
+  accountId: number,
+  userId: number
+): Promise<{ success: boolean; previousBalance: number; newBalance: number; error?: string }> {
+  try {
+    // Get account details and verify user has access
+    const [accountRows] = await pool.execute(
+      `SELECT a.id, a.code, a.account_type, a.balance, a.company
+       FROM rv_cuentas a
+       LEFT JOIN company_user cu ON a.company = cu.company_id
+       WHERE a.id = ? AND (a.user = ? OR cu.user_id = ?)`,
+      [accountId, userId, userId]
+    );
+
+    if ((accountRows as any[]).length === 0) {
+      return { success: false, previousBalance: 0, newBalance: 0, error: 'Account not found or access denied' };
+    }
+
+    const account = (accountRows as Array<{ id: number; code: string; account_type: string; balance: number; company: number }>)[0];
+    const previousBalance = account.balance;
+
+    // Calculate balance from all transactions
+    // For assets and expenses: debit increases balance, credit decreases
+    // For liabilities, equity, and income: credit increases balance, debit decreases
+    const balanceQuery = `
+      SELECT
+        CASE
+          WHEN ? IN ('asset', 'expense') THEN
+            COALESCE(SUM(CASE WHEN t.debitacc = ? THEN t.debit ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN t.creditacc = ? THEN t.credit ELSE 0 END), 0)
+          ELSE
+            COALESCE(SUM(CASE WHEN t.creditacc = ? THEN t.credit ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN t.debitacc = ? THEN t.debit ELSE 0 END), 0)
+        END as calculated_balance
+      FROM rv_transaction t
+      WHERE (t.debitacc = ? OR t.creditacc = ?)
+        AND t.company = ?
+    `;
+
+    const [balanceRows] = await pool.execute(balanceQuery, [
+      account.account_type,
+      account.code,
+      account.code,
+      account.code,
+      account.code,
+      account.code,
+      account.code,
+      account.company
+    ]);
+
+    const calculatedBalance = (balanceRows as Array<{ calculated_balance: number }>)[0].calculated_balance;
+
+    // Update the account balance
+    await pool.execute(
+      'UPDATE rv_cuentas SET balance = ?, date_updated = NOW() WHERE id = ?',
+      [calculatedBalance, account.id]
+    );
+
+    return { success: true, previousBalance, newBalance: calculatedBalance };
+  } catch (error) {
+    console.error('Database error:', error);
+    return { success: false, previousBalance: 0, newBalance: 0, error: 'Failed to update account balance' };
   }
 }
 
