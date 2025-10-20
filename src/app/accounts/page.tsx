@@ -189,13 +189,21 @@ export default function AccountsPage() {
                   {activeAccounts.length} active account{activeAccounts.length !== 1 ? 's' : ''} found
                 </p>
               </div>
-              <button
-                onClick={refetch}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <ArrowPathIcon className="h-4 w-4 mr-2" />
-                Refresh
-              </button>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => router.push('/accounts/create')}
+                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  + Create Account
+                </button>
+                <button
+                  onClick={refetch}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  <ArrowPathIcon className="h-4 w-4 mr-2" />
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
 

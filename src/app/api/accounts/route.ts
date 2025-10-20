@@ -7,12 +7,12 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
     const user = request.user!;
     const body = await request.json();
 
-    const { company, code, alias, category, currency, balance } = body;
+    const { company, code, alias, category, account_type, currency, balance, active } = body;
 
     // Validate required fields
-    if (!code || !alias || !category) {
+    if (!code || !alias || !category || !company) {
       return NextResponse.json(
-        { error: 'Code, alias, and category are required' },
+        { error: 'Code, alias, category, and entity are required' },
         { status: 400 }
       );
     }
@@ -22,11 +22,12 @@ async function postHandler(request: AuthenticatedRequest): Promise<NextResponse>
       code,
       alias,
       category,
+      account_type: account_type || category, // Use account_type if provided, otherwise fallback to category
       currency: currency || 'USD',
       balance: balance || 0,
-      active: 1,
+      active: active !== undefined ? active : 1,
       userId: user.id,
-      companyId: company || null
+      companyId: company
     });
 
     return NextResponse.json(newAccount, { status: 201 });

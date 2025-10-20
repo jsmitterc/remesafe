@@ -171,7 +171,7 @@ export async function getAccountsByUserId(userId: number): Promise<Account[]> {
         GROUP BY account_code
       ) it ON a.code = it.account_code
       WHERE a.user = ? or cu.user_id = ?
-      GROUP BY a.code
+      GROUP BY a.code, a.company
       ORDER BY a.alias ASC`,
       [userId, userId]
     );
@@ -302,6 +302,7 @@ export async function createAccount(accountData: {
   code: string;
   alias: string;
   category: string;
+  account_type?: string;
   currency: string;
   balance: number;
   active: number;
@@ -311,13 +312,14 @@ export async function createAccount(accountData: {
   try {
     const [result] = await pool.execute(
       `INSERT INTO rv_cuentas (
-        code, alias, category, currency, balance, active, user,
+        code, alias, category, account_type, currency, balance, active, user,
         date_created, date_updated, company
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
       [
         accountData.code,
         accountData.alias,
         accountData.category,
+        accountData.account_type || accountData.category, // Use account_type if provided, otherwise fallback to category
         accountData.currency,
         accountData.balance,
         accountData.active,
@@ -334,10 +336,12 @@ export async function createAccount(accountData: {
       code: accountData.code,
       alias: accountData.alias,
       category: accountData.category,
+      account_type: accountData.account_type || accountData.category,
       currency: accountData.currency,
       balance: accountData.balance,
       active: accountData.active,
-      user: accountData.userId
+      user: accountData.userId,
+      company: accountData.companyId
     };
   } catch (error) {
     console.error('Database error:', error);
@@ -370,13 +374,13 @@ export function classifyTransaction(
   }
 }
 
-export async function getTransactionsByAccountCode(accountCode: string, limit: number = 100, offset: number = 0): Promise<Transaction[]> {
+export async function getTransactionsByAccountCode(accountCode: any, limit: number = 100, offset: number = 0): Promise<Transaction[]> {
   try {
     // Ensure limit and offset are integers
     const limitInt = Math.max(1, Math.min(500, parseInt(String(limit))));
     const offsetInt = Math.max(0, parseInt(String(offset)));
 
-    console.log('Executing query with accountCode:', accountCode, 'limit:', limitInt, 'offset:', offsetInt);
+    console.log('Executing query with accountCode:', accountCode.code, 'limit:', limitInt, 'offset:', offsetInt);
 
     // Simplified query using string concatenation for LIMIT/OFFSET to avoid parameter issues
     const query = `
@@ -405,18 +409,19 @@ export async function getTransactionsByAccountCode(accountCode: string, limit: n
       LEFT JOIN rv_cuentas c_debit ON t.debitacc = c_debit.code AND c_debit.company = t.company
       LEFT JOIN rv_cuentas c_credit ON t.creditacc = c_credit.code AND c_credit.company = t.company
       LEFT JOIN company comp ON t.company = comp.id
-      WHERE t.debitacc = ? OR t.creditacc = ?
+      WHERE (t.debitacc = ? OR t.creditacc = ?) and t.company = ?
       ORDER BY t.fecha DESC, t.id DESC
       LIMIT ${limitInt} OFFSET ${offsetInt}
     `;
 
     const [rows] = await pool.execute(query, [
-      accountCode, // for transaction_type CASE
-      accountCode, // for other_account_code CASE
-      accountCode, // for other_account_alias CASE
-      accountCode, // for other_account_type CASE
-      accountCode, // for WHERE debitacc
-      accountCode  // for WHERE creditacc
+      accountCode.code, // for transaction_type CASE
+      accountCode.code, // for other_account_code CASE
+      accountCode.code, // for other_account_alias CASE
+      accountCode.code, // for other_account_type CASE
+      accountCode.code, // for WHERE debitacc
+      accountCode.code,
+      accountCode.company
     ]);
 
     console.log(`Found ${(rows as any[]).length} transactions`);
@@ -441,16 +446,18 @@ export async function getTransactionsByAccountId(accountId: number, limit: numbe
   try {
     // First get the account code
     const [accountRows] = await pool.execute(
-      'SELECT code FROM rv_cuentas WHERE id = ?',
+      'SELECT code,company FROM rv_cuentas WHERE id = ?',
       [accountId]
     );
 
-    const accounts = accountRows as { code: string }[];
+
+    const accounts = accountRows as { code: string, company: string }[];
     if (accounts.length === 0) {
       return [];
     }
 
-    return getTransactionsByAccountCode(accounts[0].code, limit, offset);
+
+    return getTransactionsByAccountCode(accounts[0], limit, offset);
   } catch (error) {
     console.error('Database error:', error);
     throw new Error('Failed to fetch transactions for account ID');
@@ -816,10 +823,10 @@ export async function getTransactionSummaryByAccount(
 
     // Build parameters array in the correct order
     const queryParams = [
-      accountCode,  // for transaction_type CASE
-      accountCode,  // for other_account_type CASE
-      accountCode,  // for amount CASE
-      accountCode,  // for WHERE debitacc
+      accountCode.code,  // for transaction_type CASE
+      accountCode.code,  // for other_account_type CASE
+      accountCode.code,  // for amount CASE
+      accountCode.code,  // for WHERE debitacc
       accountCode   // for WHERE creditacc
     ];
 
@@ -917,12 +924,12 @@ export async function getExpensesByCategory(
 
     // Build parameters array in the correct order
     const queryParams = [
-      accountCode,  // for other_account_alias CASE
-      accountCode,  // for other_account_code CASE
-      accountCode,  // for other_account_type CASE
-      accountCode,  // for transaction_type CASE
-      accountCode,  // for total_amount CASE
-      accountCode,  // for WHERE debitacc
+      accountCode.code,  // for other_account_alias CASE
+      accountCode.code,  // for other_account_code CASE
+      accountCode.code,  // for other_account_type CASE
+      accountCode.code,  // for transaction_type CASE
+      accountCode.code,  // for total_amount CASE
+      accountCode.code,  // for WHERE debitacc
       accountCode   // for WHERE creditacc
     ];
 
@@ -1016,11 +1023,11 @@ export async function getIncompleteTransactionsByAccount(
     `;
 
     const [rows] = await pool.execute(query, [
-      accountCode, accountCode, // for transaction_type CASE
-      accountCode, accountCode, accountCode, // for other_account_code CASE
-      accountCode, accountCode, accountCode, // for other_account_alias CASE
-      accountCode, accountCode, accountCode, // for other_account_type CASE
-      accountCode, accountCode // for WHERE clause
+      accountCode.code, accountCode.code, // for transaction_type CASE
+      accountCode.code, accountCode.code, accountCode.code, // for other_account_code CASE
+      accountCode.code, accountCode.code, accountCode.code, // for other_account_alias CASE
+      accountCode.code, accountCode.code, accountCode.code, // for other_account_type CASE
+      accountCode.code, accountCode // for WHERE clause
     ]);
 
     const transactions = (rows as Transaction[]).map(transaction => ({
@@ -1080,7 +1087,7 @@ export async function assignAccountToTransaction(
     }
 
     // Update the transaction
-    await pool.execute(updateQuery, [assignedAccountCode, transactionId]);
+    await pool.execute(updateQuery, [assignedAccountCode.code, transactionId]);
 
     return { success: true };
 
@@ -1121,7 +1128,7 @@ export async function getIncompleteTransactionCount(accountCode: string): Promis
         AND (t.debitacc = '0' OR t.creditacc = '0')
     `;
 
-    const [rows] = await pool.execute(query, [accountCode, accountCode]);
+    const [rows] = await pool.execute(query, [accountCode.code, accountCode]);
     const result = rows as { count: number }[];
     return result[0]?.count || 0;
   } catch (error) {
@@ -1277,7 +1284,7 @@ export async function bulkAssignAccountToTransactions(
         (SELECT COUNT(*) FROM rv_cuentas WHERE code = ? AND user = ? AND active = 1) as account_count
     `;
 
-    const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, userId, assignedAccountCode, userId]);
+    const [verifyResult] = await pool.execute(verifyQuery, [...transactionIds, userId, assignedAccountCode.code, userId]);
     const { transaction_count, account_count } = (verifyResult as Array<{ transaction_count: number; account_count: number }>)[0];
 
     if (transaction_count === 0) {
@@ -1301,7 +1308,7 @@ export async function bulkAssignAccountToTransactions(
       )
     `;
 
-    const params = [assignedAccountCode, ...transactionIds, userId];
+    const params = [assignedAccountCode.code, ...transactionIds, userId];
     const [result] = await pool.execute(updateQuery, params);
 
     // Get the number of affected rows
@@ -1637,6 +1644,7 @@ export async function getAccountsByEntityId(entityId: number, userId: number): P
       ORDER BY a.alias ASC
     `;
 
+    console.log(entityId, userId);
     const [rows] = await pool.execute(query, [entityId, entityId, userId]);
     return rows as Account[];
   } catch (error) {
