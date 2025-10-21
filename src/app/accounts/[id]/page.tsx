@@ -7,6 +7,7 @@ import { ArrowLeftIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import { Account } from '@/lib/database';
 import StatementImportModal from '@/components/StatementImportModal';
+import TransactionsChart from '@/components/TransactionsChart';
 
 interface AccountDetails {
   company?: number;
@@ -185,6 +186,7 @@ export default function AccountDetailPage() {
   const [bulkAssignEntity, setBulkAssignEntity] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [accountFilter, setAccountFilter] = useState<'all' | 'empty' | 'filled'>('all');
+  const [selectedChartDate, setSelectedChartDate] = useState<string | null>(null);
   const [isEditingAccount, setIsEditingAccount] = useState(false);
   const [editedAccount, setEditedAccount] = useState<Partial<AccountDetails>>({});
   const [isSavingAccount, setIsSavingAccount] = useState(false);
@@ -210,8 +212,16 @@ export default function AccountDetailPage() {
     setSelectedTransactions(new Set());
   };
 
-  // Filter transactions based on search term and account filter
+  // Filter transactions based on search term, account filter, and selected chart date
   const filteredTransactions = transactions.filter(transaction => {
+    // Apply date filter from chart click
+    if (selectedChartDate) {
+      const transactionDate = new Date(transaction.fecha).toISOString().split('T')[0];
+      const chartDate = new Date(selectedChartDate).toISOString().split('T')[0];
+
+      if (transactionDate !== chartDate) return false;
+    }
+
     // Apply search term filter
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
@@ -1141,122 +1151,134 @@ export default function AccountDetailPage() {
         </div>
       </div>
 
-      {/* Account Info */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Account Information</h2>
-          {!isEditingAccount ? (
-            <button
-              onClick={handleEditAccount}
-              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              Edit
-            </button>
-          ) : (
-            <div className="flex space-x-2">
+      {/* Account Info and Chart - Side by Side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Account Info - Left Half */}
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Account Information</h2>
+            {!isEditingAccount ? (
               <button
-                onClick={handleCancelEdit}
-                disabled={isSavingAccount}
-                className="px-3 py-1.5 text-sm bg-gray-300 text-gray-700 rounded hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+                onClick={handleEditAccount}
+                className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                Cancel
+                Edit
               </button>
-              <button
-                onClick={handleSaveAccount}
-                disabled={isSavingAccount}
-                className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-              >
-                {isSavingAccount ? 'Saving...' : 'Save'}
-              </button>
+            ) : (
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  disabled={isSavingAccount}
+                  className="px-3 py-1.5 text-sm bg-gray-300 text-gray-700 rounded hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveAccount}
+                  disabled={isSavingAccount}
+                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                >
+                  {isSavingAccount ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Account Code</dt>
+              <dd className="text-sm text-gray-900">{account.account_code}</dd>
             </div>
-          )}
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Account Name</dt>
+              {isEditingAccount ? (
+                <input
+                  type="text"
+                  value={editedAccount.account_name || ''}
+                  onChange={(e) => setEditedAccount({ ...editedAccount, account_name: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              ) : (
+                <dd className="text-sm text-gray-900">{account.account_name}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Category</dt>
+              {isEditingAccount ? (
+                <input
+                  type="text"
+                  value={editedAccount.category || ''}
+                  onChange={(e) => setEditedAccount({ ...editedAccount, category: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              ) : (
+                <dd className="text-sm text-gray-900">{account.category || '-'}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Account Type</dt>
+              {isEditingAccount ? (
+                <select
+                  value={editedAccount.account_type || ''}
+                  onChange={(e) => setEditedAccount({ ...editedAccount, account_type: e.target.value as 'asset' | 'liability' | 'equity' | 'income' | 'expense' })}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">-</option>
+                  <option value="asset">Asset</option>
+                  <option value="liability">Liability</option>
+                  <option value="equity">Equity</option>
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                </select>
+              ) : (
+                <dd className="text-sm text-gray-900">{account.account_type || '-'}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Currency</dt>
+              {isEditingAccount ? (
+                <input
+                  type="text"
+                  value={editedAccount.currency_code || ''}
+                  onChange={(e) => setEditedAccount({ ...editedAccount, currency_code: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              ) : (
+                <dd className="text-sm text-gray-900">{account.currency_code}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Status</dt>
+              {isEditingAccount ? (
+                <select
+                  value={editedAccount.account_status || ''}
+                  onChange={(e) => setEditedAccount({ ...editedAccount, account_status: e.target.value })}
+                  className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              ) : (
+                <dd className="text-sm text-gray-900">{account.account_status}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Created</dt>
+              <dd className="text-sm text-gray-900">{formatDate(account.created_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
+              <dd className="text-sm text-gray-900">{formatDate(account.updated_at)}</dd>
+            </div>
+          </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Account Code</dt>
-            <dd className="text-sm text-gray-900">{account.account_code}</dd>
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Account Name</dt>
-            {isEditingAccount ? (
-              <input
-                type="text"
-                value={editedAccount.account_name || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, account_name: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            ) : (
-              <dd className="text-sm text-gray-900">{account.account_name}</dd>
-            )}
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Category</dt>
-            {isEditingAccount ? (
-              <input
-                type="text"
-                value={editedAccount.category || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, category: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            ) : (
-              <dd className="text-sm text-gray-900">{account.category || '-'}</dd>
-            )}
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Account Type</dt>
-            {isEditingAccount ? (
-              <select
-                value={editedAccount.account_type || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, account_type: e.target.value as 'asset' | 'liability' | 'equity' | 'income' | 'expense' })}
-                className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">-</option>
-                <option value="asset">Asset</option>
-                <option value="liability">Liability</option>
-                <option value="equity">Equity</option>
-                <option value="income">Income</option>
-                <option value="expense">Expense</option>
-              </select>
-            ) : (
-              <dd className="text-sm text-gray-900">{account.account_type || '-'}</dd>
-            )}
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Currency</dt>
-            {isEditingAccount ? (
-              <input
-                type="text"
-                value={editedAccount.currency_code || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, currency_code: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            ) : (
-              <dd className="text-sm text-gray-900">{account.currency_code}</dd>
-            )}
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Status</dt>
-            {isEditingAccount ? (
-              <select
-                value={editedAccount.account_status || ''}
-                onChange={(e) => setEditedAccount({ ...editedAccount, account_status: e.target.value })}
-                className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            ) : (
-              <dd className="text-sm text-gray-900">{account.account_status}</dd>
-            )}
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Created</dt>
-            <dd className="text-sm text-gray-900">{formatDate(account.created_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
-            <dd className="text-sm text-gray-900">{formatDate(account.updated_at)}</dd>
-          </div>
+
+        {/* Transaction Chart - Right Half */}
+        <div>
+          <TransactionsChart
+            accountId={account.account_id}
+            onDateClick={(date) => setSelectedChartDate(date)}
+            selectedDate={selectedChartDate}
+          />
         </div>
       </div>
 
@@ -1308,15 +1330,31 @@ export default function AccountDetailPage() {
               </select>
             </div>
           </div>
-          {(searchTerm || accountFilter !== 'all') && (
+          {(searchTerm || accountFilter !== 'all' || selectedChartDate) && (
             <div className="flex items-center justify-between text-sm text-gray-600 pt-2 border-t border-gray-200">
-              <span>
-                Showing {filteredTransactions.length} of {transactions.length} transactions
-              </span>
+              <div className="flex items-center space-x-2">
+                <span>
+                  Showing {filteredTransactions.length} of {transactions.length} transactions
+                </span>
+                {selectedChartDate && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                    Date: {new Date(selectedChartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <button
+                      onClick={() => setSelectedChartDate(null)}
+                      className="ml-1 inline-flex items-center p-0.5 rounded-full text-indigo-600 hover:bg-indigo-200 hover:text-indigo-900 focus:outline-none"
+                    >
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => {
                   setSearchTerm('');
                   setAccountFilter('all');
+                  setSelectedChartDate(null);
                 }}
                 className="text-indigo-600 hover:text-indigo-800 font-medium"
               >
